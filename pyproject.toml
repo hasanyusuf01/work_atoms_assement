@@ -5,11 +5,14 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "e2b-code-interpreter>=2.0.0",
     "google-generativeai>=0.8.5",
+    "gradio>=5.47.2",
     "langchain>=0.3.27",
     "langchain-google-genai>=2.0.10",
     "langchain-mcp-adapters>=0.1.10",
     "langgraph>=0.6.7",
     "mcp[cli]>=1.15.0",
     "python-dotenv>=1.1.1",
+    "streamlit>=1.50.0",
 ]

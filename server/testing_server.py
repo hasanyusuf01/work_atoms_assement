@@ -34,7 +34,7 @@ TEMP_CODE_FOLDER.mkdir(exist_ok=True)
 def list_input_files(extension_filter: Optional[str] = None) -> Dict[str, Any]:
     """List all files in the input folder, optionally filtered by extension.
     
-    Args:
+    Args:YusufHasan_CV.pdf\
         extension_filter: Filter by file extension (e.g., 'pdf', 'csv')
     
     Returns:
@@ -223,167 +223,6 @@ def generate_python_code(instruction: str, target_files: List[str], output_forma
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
-def _generate_code_template(instruction: str, target_files: List[str], output_format: str) -> Dict[str, Any]:
-    """Generate appropriate code template based on instruction and file types."""
-    
-    # Analyze file types
-    file_extensions = [Path(f).suffix.lower() for f in target_files]
-    has_pdf = any(ext == '.pdf' for ext in file_extensions)
-    has_csv = any(ext == '.csv' for ext in file_extensions)
-    has_image = any(ext in ['.jpg', '.jpeg', '.png', '.bmp'] for ext in file_extensions)
-    has_text = any(ext == '.txt' for ext in file_extensions)
-    
-    # Determine operation type from instruction
-    instruction_lower = instruction.lower()
-    
-    if 'summariz' in instruction_lower and has_pdf:
-        return _generate_pdf_summarizer_code(target_files, output_format)
-    elif 'analyz' in instruction_lower and has_csv:
-        return _generate_csv_analyzer_code(target_files, output_format)
-    elif 'process' in instruction_lower and has_image:
-        return _generate_image_processor_code(target_files, output_format)
-    elif 'extract' in instruction_lower:
-        return _generate_text_extractor_code(target_files, output_format)
-    else:
-        # Generic file processor
-        return _generate_generic_processor_code(instruction, target_files, output_format)
-
-def _generate_pdf_summarizer_code(filenames: List[str], output_format: str) -> Dict[str, Any]:
-    """Generate PDF summarization code."""
-    
-    code = f'''#!/usr/bin/env python3
-"""
-PDF Summarization Script
-Generated for: {filenames}
-"""
-
-import PyPDF2
-import re
-from pathlib import Path
-from collections import Counter
-
-def summarize_pdf(filepath: Path) -> str:
-    """Extract and summarize PDF content."""
-    text = ""
-    try:
-        with open(filepath, 'rb') as file:
-            reader = PyPDF2.PdfReader(file)
-            for page in reader.pages:
-                text += page.extract_text() + "\\n"
-    except Exception as e:
-        return f"Error reading PDF: {{e}}"
-    
-    # Simple summarization: extract key sentences
-    sentences = re.split(r'[.!?]+', text)
-    meaningful_sentences = [s.strip() for s in sentences if len(s.strip()) > 50]
-    
-    # Get first 5 meaningful sentences as summary
-    summary = '. '.join(meaningful_sentences[:5]) + '.'
-    return summary
-
-def main():
-    input_folder = Path("input")
-    output_folder = Path("output")
-    output_folder.mkdir(exist_ok=True)
-    
-    results = {{}}
-    for filename in {filenames}:
-        filepath = input_folder / filename
-        if filepath.exists():
-            print(f"Processing {{filename}}...")
-            summary = summarize_pdf(filepath)
-            results[filename] = summary
-            
-            # Save individual summary
-            output_file = output_folder / f"{{filename}}_summary.txt"
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(summary)
-            print(f"Saved summary to {{output_file}}")
-    
-    # Save combined results
-    combined_output = output_folder / "pdf_summaries.json"
-    with open(combined_output, 'w', encoding='utf-8') as f:
-        import json
-        json.dump(results, f, indent=2)
-    
-    print(f"All summaries saved to {{combined_output}}")
-    return results
-
-if __name__ == "__main__":
-    main()
-'''
-
-    return {
-        'code': code,
-        'dependencies': ['PyPDF2'],
-        'complexity': 'medium',
-        'output_files': [f"{f}_summary.txt" for f in filenames] + ['pdf_summaries.json']
-    }
-
-def _generate_csv_analyzer_code(filenames: List[str], output_format: str) -> Dict[str, Any]:
-    """Generate CSV analysis code."""
-    
-    code = f'''#!/usr/bin/env python3
-"""
-CSV Analysis Script
-Generated for: {filenames}
-"""
-
-import pandas as pd
-import matplotlib.pyplot as plt
-import json
-from pathlib import Path
-
-def analyze_csv(filepath: Path) -> dict:
-    """Analyze CSV file and generate statistics."""
-    try:
-        df = pd.read_csv(filepath)
-        
-        analysis = {{
-            'filename': filepath.name,
-            'shape': df.shape,
-            'columns': list(df.columns),
-            'data_types': {{col: str(dtype) for col, dtype in df.dtypes.items()}},
-            'null_counts': df.isnull().sum().to_dict(),
-            'basic_stats': df.describe().to_dict()
-        }}
-        
-        return analysis
-    except Exception as e:
-        return {{'error': str(e)}}
-
-def main():
-    input_folder = Path("input")
-    output_folder = Path("output")
-    output_folder.mkdir(exist_ok=True)
-    
-    all_analyses = {{}}
-    for filename in {filenames}:
-        filepath = input_folder / filename
-        if filepath.exists():
-            print(f"Analyzing {{filename}}...")
-            analysis = analyze_csv(filepath)
-            all_analyses[filename] = analysis
-            
-            # Save individual analysis
-            output_file = output_folder / f"{{filename}}_analysis.json"
-            with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(analysis, f, indent=2)
-            print(f"Saved analysis to {{output_file}}")
-    
-    print("CSV analysis completed!")
-    return all_analyses
-
-if __name__ == "__main__":
-    main()
-'''
-
-    return {
-        'code': code,
-        'dependencies': ['pandas', 'matplotlib'],
-        'complexity': 'medium',
-        'output_files': [f"{f}_analysis.json" for f in filenames]
-    }
 
 # ============ CODE EXECUTION TOOLS ============
 
@@ -623,25 +462,6 @@ def get_file_status() -> str:
 
 # ============ HELPER FUNCTIONS ============
 
-def _generate_image_processor_code(filenames: List[str], output_format: str) -> Dict[str, Any]:
-    """Generate image processing code (placeholder)."""
-    code = f"# Image processing code for {filenames}"
-    return {
-        'code': code,
-        'dependencies': ['PIL'],
-        'complexity': 'medium',
-        'output_files': [f"{f}_processed.jpg" for f in filenames]
-    }
-
-def _generate_text_extractor_code(filenames: List[str], output_format: str) -> Dict[str, Any]:
-    """Generate text extraction code (placeholder)."""
-    code = f"# Text extraction code for {filenames}"
-    return {
-        'code': code,
-        'dependencies': [],
-        'complexity': 'low',
-        'output_files': [f"{f}_extracted.txt" for f in filenames]
-    }
 
 def _generate_generic_processor_code(instruction: str, filenames: List[str], output_format: str) -> Dict[str, Any]:
     """Generate generic file processing code."""

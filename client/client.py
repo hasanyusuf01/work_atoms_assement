@@ -72,8 +72,40 @@ async def run_agent():
                     formatted = str(response)
                 print("\\nResponse:")
                 print(formatted)
+                # print
     return
 
 # Entry point: run the async agent loop
 if __name__ == "__main__":
     asyncio.run(run_agent())
+#!/usr/bin/env python3
+# """
+# Quick start script for the enhanced MCP client
+# """
+
+# import asyncio
+# import sys
+# from enhanced_client import EnhancedMCPClient
+
+# async def main():
+#     if len(sys.argv) < 2:
+#         print("Usage: python run_enhanced_client.py <mcp_server_script>")
+#         print("Example: python run_enhanced_client.py mcp_file_processor.py")
+#         sys.exit(1)
+    
+#     server_script = sys.argv[1]
+    
+#     print("🚀 Starting Enhanced MCP Client...")
+#     print("This client features:")
+#     print("• 🤔 Real-time thinking process display")
+#     print("• 🛠️ Tool usage visualization") 
+#     print("• 💬 Conversation history maintenance")
+#     print("• 🎨 Claude Desktop-like interface")
+#     print("• ⚡ Live execution streaming")
+#     print()
+    
+#     client = EnhancedMCPClient(server_script)
+#     await client.interactive_chat_loop()
+
+# if __name__ == "__main__":
+#     asyncio.run(main())
