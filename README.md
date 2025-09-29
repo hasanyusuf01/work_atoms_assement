@@ -1,5 +1,5 @@
 
-````markdown
+
 # Project Setup & Usage
 
 ## Main File
@@ -8,9 +8,11 @@ The primary entry point is **`modified_main.py`**, which contains the CLI code f
 ## Environment Setup
 1. Create a virtual environment.
 2. Install dependencies:
-   ```bash
+
+```
+   bash
    pip install -r requirements.txt
-````
+```
 
 3. Configure environment variables:
 
