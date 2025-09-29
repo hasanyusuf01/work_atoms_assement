@@ -1,5 +1,3 @@
-Got it, sir. I’ve cleaned up the README so it matches your file structure, uses `uv` correctly, and mentions the extra files (`ui.py`, `client/`, `server/`). Here’s the updated version:
-
 # Project Setup & Usage
 
 ## Main Files
