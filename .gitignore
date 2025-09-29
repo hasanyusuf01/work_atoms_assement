@@ -1,2 +1,18 @@
 .env
 
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Local data
+input_files/
+output_files/
+
+# Virtual environments (if any)
+.env/
+venv/
+.myenv/
+
+# Lock file
+uv.lock

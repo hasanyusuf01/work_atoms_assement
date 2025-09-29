@@ -28,9 +28,13 @@ load_dotenv()
 
 
 @tool
-def execute_and_download_code(code: str) -> str:
+def execute_and_download_code(code: str, required_files: str = "") -> str:
     """
     Execute Python code in sandbox and handle all types of E2B results including images, files, and outputs.
+    
+    Args:
+        code: Python code to execute
+        required_files: Comma-separated list of files needed for execution (e.g., "data.csv,config.json")
     """
     try:
         session_id = str(uuid.uuid4())[:8]
@@ -38,17 +42,27 @@ def execute_and_download_code(code: str) -> str:
         
         processor = DynamicFileProcessor(logger)
         files_before = set(processor.get_available_files())
-        
+
+        files_to_upload = []
+        if required_files:
+            files_to_upload = [f.strip() for f in required_files.split(',') if f.strip()]
+            print(f"Required files for execution: {files_to_upload}")
+        else:
+            files_to_upload = processor.get_available_files()
         with Sandbox.create() as sandbox:
             # Upload all files as binary
-            files = processor.get_available_files()
-            for file in files:
+            # files = processor.get_available_files()
+            for file in files_to_upload:
                 local_path = os.path.join(processor.input_folder, file)
                 sandbox_path = f"/home/user/{file}"
-                with open(local_path, "rb") as f:
-                    sandbox.files.write(sandbox_path, f.read())
+                if os.path.exists(local_path):
+                    with open(local_path, "rb") as f:
+                        sandbox.files.write(sandbox_path, f.read())
+                    print(f"Uploaded required file: {file}")
+                else:
+                    print(f"Warning: Required file {file} not found in input folder")
             
-            print("Files uploaded to sandbox, executing code...")
+            print("Required files uploaded to sandbox, executing code...")
             
             # Execute the code
             execution = sandbox.run_code(code)
@@ -73,7 +87,6 @@ def execute_and_download_code(code: str) -> str:
                         print(f"Output files marker found: {output_files}")
                         break
             
-            # 2. Handle execution.results (PIL images, base64, etc.)
             processed_files = []
             if execution.results:
                 print(f"Processing {len(execution.results)} result(s)...")
@@ -84,7 +97,6 @@ def execute_and_download_code(code: str) -> str:
                     result_files = process_single_result(result, processor.output_folder, i, output_files)
                     processed_files.extend(result_files)
             
-            # 3. Download files created in sandbox filesystem
             downloaded_files = []
             for filename in output_files:
                 try:
@@ -508,16 +520,17 @@ def setup_agent():
     4. Write modified files back using write_file tool
     5. When you need to generate code, ALWAYS use the generate_python_code tool
     6. The generate_python_code tool will create ACTUAL working Python code, not placeholders
-    7. Always provide clear task_description and file_info to generate_python_code
+    7. Always provide clear task_description and file_info (the file info should be as per the user dont asume things on your own) to generate_python_code
     9. Return the final results to the user
-    10. For execution WITH automatic file downloads: use execute_and_download_code (RECOMMENDED)
+    10. For execution WITH automatic file downloads: use execute_and_download_code (RECOMMENDED) this tool takes the code and the required files 
+    list i.e the files that are required to run the code or on which the processing is to be done.
     11. For manual file downloads: use download_files_from_sandbox
         
         Always follow this process:
     1. First, use list_files tool to understand what files are available
     2. If needed, use read_file tool to understand file structure
     3. Generate appropriate Python code using generate_python_code tool for the requested task
-    4. Execute the code using execute_and_download_code tool and return results
+    4. Execute the code using execute_and_download_code tool which will take the code as input and the list of required files names as described in its desription and return results
     
 The execute_and_download_code tool automatically detects output files from code execution and downloads them.
     Be specific about which files you're processing and what operations you're performing.
@@ -774,7 +787,7 @@ def main():
         cli = CLIFileProcessor()
         cli.run()
     except Exception as e:
-        print(f"\n <======<(^-^)>=====>Failed to start CLI: {e}")
+        print(f"\n <======<(^-^)>=====> Failed to start CLI: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
