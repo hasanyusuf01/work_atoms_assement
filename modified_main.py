@@ -1,5 +1,4 @@
 import os
-import re
 import argparse
 import sys
 from pathlib import Path
@@ -7,82 +6,25 @@ from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.schema import BaseOutputParser
 from e2b_code_interpreter import Sandbox
-import pandas as pd
-import json
-from typing import Dict, Any, List
+from typing import  List
 import uuid
 import logging
 from datetime import datetime
 import base64
 import base64
 import io
+from dotenv import load_dotenv
+from fileprocessor import DynamicFileProcessor, ProcessingLogger
+import shutil
+
+
+
+
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-from dotenv import load_dotenv
-load_dotenv()  # Load environment variables from .env (e.g., GOOGLE_API_KEY)
-
-
-class DynamicFileProcessor:
-    def __init__(self, input_folder: str = "input_files"):
-        self.input_folder = input_folder
-        self.output_folder = "output_folder"
-        self.setup_folders()
-        
-    def setup_folders(self):
-        """Create necessary folders"""
-        os.makedirs(self.input_folder, exist_ok=True)
-        
-    def get_available_files(self) -> List[str]:
-        """Get list of all files in input folder"""
-        try:
-            files = []
-            for file in os.listdir(self.input_folder):
-                if os.path.isfile(os.path.join(self.input_folder, file)):
-                    files.append(file)
-            return files
-        except Exception as e:
-            logger.error(f"Error listing files: {e}")
-            return []
-
-class ProcessingLogger:
-    def __init__(self):
-        self.logs = []
-    
-    def add_log(self, log_type: str, content: str, metadata: Dict = None):
-        """Add a processing log"""
-        log_entry = {
-            'id': str(uuid.uuid4())[:8],
-            'type': log_type,
-            'content': content,
-            'timestamp': datetime.now(),
-            'metadata': metadata or {}
-        }
-        self.logs.append(log_entry)
-        logger.info(f"{log_type}: {content}")
-    
-    def display_logs(self, log_types: List[str] = None):
-        """Display logs in CLI format"""
-        if not self.logs:
-            print("No logs available.")
-            return
-            
-        filtered_logs = self.logs
-        if log_types:
-            filtered_logs = [log for log in self.logs if log['type'] in log_types]
-        
-        print("\n" + "="*80)
-        print("PROCESSING LOGS")
-        print("="*80)
-        
-        for log in filtered_logs:
-            print(f"\n[{log['timestamp'].strftime('%H:%M:%S')}] {log['type']}:")
-            print(f"  {log['content']}")
-            if log['metadata']:
-                print(f"  Metadata: {json.dumps(log['metadata'], indent=2)}")
-
+load_dotenv() 
 
 
 @tool
@@ -94,7 +36,7 @@ def execute_and_download_code(code: str) -> str:
         session_id = str(uuid.uuid4())[:8]
         print(f"Executing code in sandbox (Session: {session_id})...")
         
-        processor = DynamicFileProcessor()
+        processor = DynamicFileProcessor(logger)
         files_before = set(processor.get_available_files())
         
         with Sandbox.create() as sandbox:
@@ -139,7 +81,7 @@ def execute_and_download_code(code: str) -> str:
                     print(f"Result {i} type: {type(result)}")
                     print(f"Result {i} attributes: {dir(result)}")
                     
-                    result_files = process_single_result(result, processor.input_folder, i, output_files)
+                    result_files = process_single_result(result, processor.output_folder, i, output_files)
                     processed_files.extend(result_files)
             
             # 3. Download files created in sandbox filesystem
@@ -147,7 +89,7 @@ def execute_and_download_code(code: str) -> str:
             for filename in output_files:
                 try:
                     sandbox_path = f"/home/user/{filename}"
-                    local_path = os.path.join(processor.input_folder, filename)
+                    local_path = os.path.join(processor.output_folder, filename)
                     
                     content = sandbox.files.read(sandbox_path)
                     
@@ -334,7 +276,7 @@ def read_file(filename: str) -> str:
         filename: Name of the file to read
     """
     try:
-        processor = DynamicFileProcessor()
+        processor = DynamicFileProcessor(logger)
         file_path = os.path.join(processor.input_folder, filename)
         
         if not os.path.exists(file_path):
@@ -365,7 +307,7 @@ def write_file(filename: str, content: str) -> str:
         content: Content to write to the file
     """
     try:
-        processor = DynamicFileProcessor()
+        processor = DynamicFileProcessor(logger)
         file_path = os.path.join(processor.input_folder, filename)
         
         # Ensure the directory exists
@@ -411,6 +353,7 @@ def generate_python_code(task_description: str, file_info: str = "") -> str:
         6. for the generated code Files in sandbox are located at: '/home/user/'
         7. for the generated code Use ABSOLUTE paths: '/home/user/filename.csv'
         8. for the generated code Save output files to: '/home/user/output_filename.csv'
+        9. localy the output files should be stored in the './output_files/' directory
         6. Return ONLY the Python code, no explanations
         7. Make sure the code is self-contained and executable
         8.  If creating output files, save them in the CURRENT DIRECTORY (not in subfolders)
@@ -452,7 +395,7 @@ def list_files() -> str:
     IMPORTANT: This tool takes no input parameters.
     """
     try:
-        processor = DynamicFileProcessor()
+        processor = DynamicFileProcessor(logger)
         files = processor.get_available_files()
         if not files:
             return "No files found in input folder. Please upload files first."
@@ -476,7 +419,7 @@ def download_files_from_sandbox(filenames: str) -> str:
         filenames: Comma-separated list of filenames to download (e.g., "a.csv,output.txt")
     """
     try:
-        processor = DynamicFileProcessor()
+        processor = DynamicFileProcessor(logger)
         files_to_download = [f.strip() for f in filenames.split(',')]
         downloaded_files = []
         
@@ -521,7 +464,7 @@ def execute_python_code(code: str) -> str:
         session_id = str(uuid.uuid4())[:8]
         print(f"Executing code in sandbox (Session: {session_id})...")
         
-        processor = DynamicFileProcessor()
+        processor = DynamicFileProcessor(logger)
         
         with Sandbox.create() as sandbox:
             # Upload all input files to sandbox
@@ -596,7 +539,6 @@ The execute_and_download_code tool automatically detects output files from code 
 )   
     agent = create_tool_calling_agent(llm, tools, prompt)
     
-    # FIXED: Use better configuration for agent executor
     agent_executor = AgentExecutor(
         agent=agent, 
         tools=tools, 
@@ -610,8 +552,8 @@ The execute_and_download_code tool automatically detects output files from code 
 class CLIFileProcessor:
 
     def __init__(self):
-        self.processor = DynamicFileProcessor()
-        self.logger = ProcessingLogger()
+        self.processor = DynamicFileProcessor(logger)
+        self.logger = ProcessingLogger(logger)
         self.agent = setup_agent()
         self.conversation = []
 
@@ -619,7 +561,6 @@ class CLIFileProcessor:
         """Test if agent tools are working properly"""
         print("\n\n <======<(^-^)>=====> Testing agent tools...")
         try:
-            # Test the agent with a simple file listing request
             test_result = self.agent.invoke({
                 "input": "Please list all available files using the list_files tool"
             })
@@ -638,7 +579,7 @@ class CLIFileProcessor:
     def display_banner(self):
         """Display CLI banner"""
         print("\n" + "="*80)
-        print("\n <======<(^-^)>=====> DYNAMIC FILE PROCESSOR - CLI VERSION")
+        print("\n <======<(^-^)>=====> CodeSmith")
         print("="*80)
         print("Commands:")
         print("  /help, /h      - Show this help message")
@@ -666,8 +607,6 @@ class CLIFileProcessor:
                 dest_path = os.path.join(self.processor.input_folder, filename)
                 
                 try:
-                    # Copy file to input folder
-                    import shutil
                     shutil.copy2(file_path, dest_path)
                     self.logger.add_log(
                         "FILE_UPLOAD", 
@@ -815,7 +754,7 @@ class CLIFileProcessor:
 
 def main():
     """Main entry point for CLI version"""
-    parser = argparse.ArgumentParser(description='Dynamic File Processor - CLI Version')
+    parser = argparse.ArgumentParser(description='CodeSmith')
     parser.add_argument('--input-folder', '-i', default='input_files', 
                        help='Input folder for files (default: input_files)')
     parser.add_argument('--openai-key', '-k', help='OpenAI API key')
