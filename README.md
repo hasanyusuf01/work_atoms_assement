@@ -68,7 +68,7 @@ uv run modified_main.py
 Run the UI version:
 
 ```bash
-uv run ui.py
+streamlit run ui.py
 ```
 UI output 
 <img width="1919" height="939" alt="image" src="https://github.com/user-attachments/assets/eeb48d99-2712-4845-a66a-fc42b74082e0" />
