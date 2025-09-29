@@ -1,5 +1,5 @@
 import os
-import tempfile
+import re
 import argparse
 import sys
 from pathlib import Path
@@ -15,9 +15,8 @@ from typing import Dict, Any, List
 import uuid
 import logging
 from datetime import datetime
-import readline  # For better CLI input experience
-
-# Set up logging
+import base64
+import binascii
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -83,149 +82,248 @@ class ProcessingLogger:
             if log['metadata']:
                 print(f"  Metadata: {json.dumps(log['metadata'], indent=2)}")
 
+import base64
+import io
+from PIL import Image
+import json
+
 @tool
 def execute_and_download_code(code: str) -> str:
     """
-    Execute Python code in sandbox and automatically download output files.
+    Execute Python code in sandbox and handle all types of E2B results including images, files, and outputs.
     """
     try:
         session_id = str(uuid.uuid4())[:8]
-        print(f"🔧 Executing code in sandbox (Session: {session_id})...")
+        print(f"Executing code in sandbox (Session: {session_id})...")
         
         processor = DynamicFileProcessor()
         files_before = set(processor.get_available_files())
         
         with Sandbox.create() as sandbox:
-            # Upload input files - handle binary files properly
+            # Upload all files as binary
             files = processor.get_available_files()
             for file in files:
                 local_path = os.path.join(processor.input_folder, file)
                 sandbox_path = f"/home/user/{file}"
-                
-                # Check if file is binary (images, PDFs, etc.)
-                file_ext = Path(file).suffix.lower()
-                binary_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.pdf', '.zip', '.exe'}
-                
-                if file_ext in binary_extensions:
-                    # Upload as binary
-                    with open(local_path, "rb") as f:
-                        sandbox.files.write(sandbox_path, f.read())
-                else:
-                    # Upload as text
-                    with open(local_path, "r", encoding='utf-8') as f:
-                        sandbox.files.write(sandbox_path, f.read())
+                with open(local_path, "rb") as f:
+                    sandbox.files.write(sandbox_path, f.read())
             
-            print("📁 Files uploaded to sandbox, executing code...")
+            print("Files uploaded to sandbox, executing code...")
             
             # Execute the code
             execution = sandbox.run_code(code)
             
-            # **FIXED: Better output extraction without binary pollution**
-            output_text = ""
+            # Debug: Check what we got
+            print(f"Execution results type: {type(execution.results)}")
+            print(f"Number of results: {len(execution.results)}")
             
-            # Extract only text output, filter out binary data
-            if execution.text:
-                # Clean the output - remove any binary data that might have been printed
-                clean_output = []
-                for line in execution.text.split('\n'):
-                    # Skip lines that look like binary data or are too long
-                    if len(line) < 1000 and not looks_like_binary(line):
-                        clean_output.append(line)
-                output_text = "\n".join(clean_output)
+            # Process all types of results
+            processed_files = []
             
-            elif execution.logs and execution.logs.stdout:
-                # Clean logs too
-                clean_logs = []
-                for line in execution.logs.stdout:
-                    if len(line) < 1000 and not looks_like_binary(line):
-                        clean_logs.append(line)
-                output_text = "\n".join(clean_logs)
+            # 1. Handle execution.results (PIL images, base64, etc.)
+            if execution.results:
+                print(f"Processing {len(execution.results)} result(s)...")
+                for i, result in enumerate(execution.results):
+                    print(f"Result {i} type: {type(result)}")
+                    print(f"Result {i} attributes: {dir(result)}")
+                    
+                    # Handle different result types
+                    result_files = process_single_result(result, processor.input_folder, i)
+                    processed_files.extend(result_files)
             
-            print(f"📝 Clean execution output: {output_text[:500]}...")  # Limit output length
+            # 2. Handle output files from the code (via ### OUTPUT_FILES marker)
+            output_text = execution.text or ""
+            if not output_text and execution.logs and execution.logs.stdout:
+                output_text = "\n".join(execution.logs.stdout)
             
-            # Parse for output files
+            print(f"Execution output: {output_text}")
+            
             output_files = []
             if output_text:
                 for line in output_text.split('\n'):
                     if '### OUTPUT_FILES:' in line:
                         files_part = line.split('### OUTPUT_FILES:')[1].strip()
                         output_files = [f.strip() for f in files_part.split(',')]
-                        print(f"📁 Files to download: {output_files}")
+                        print(f"Output files marker found: {output_files}")
                         break
             
-            # Download files with proper binary handling
+            # 3. Download files created in sandbox filesystem
             downloaded_files = []
             for filename in output_files:
                 try:
-                    content = sandbox.files.read(f"/home/user/{filename}")
+                    sandbox_path = f"/home/user/{filename}"
                     local_path = os.path.join(processor.input_folder, filename)
                     
-                    # Determine if file is binary based on extension
+                    content = sandbox.files.read(sandbox_path)
+                    
+                    # Handle binary files properly
                     file_ext = Path(filename).suffix.lower()
-                    is_binary = file_ext in {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.pdf', '.zip'}
+                    is_binary = file_ext in {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.pdf'}
                     
-                    if is_binary and isinstance(content, str):
-                        # Convert string back to bytes for binary files
-                        content = content.encode('utf-8')  # Preserve binary data
+                    if is_binary:
+                        if isinstance(content, str):
+                            # Try base64 first, then fallback to raw bytes
+                            try:
+                                decoded = base64.b64decode(content)
+                                content = decoded
+                            except:
+                                content = content.encode('latin-1')
                     
-                    if is_binary or not isinstance(content, str):
-                        with open(local_path, 'wb') as f:
-                            if isinstance(content, str):
-                                f.write(content.encode('utf-8'))
-                            else:
-                                f.write(content)
-                    else:
-                        with open(local_path, 'w', encoding='utf-8') as f:
+                    # Write file
+                    with open(local_path, 'wb') as f:
+                        if isinstance(content, str):
+                            f.write(content.encode('latin-1'))
+                        else:
                             f.write(content)
                     
                     downloaded_files.append(filename)
-                    print(f"✅ Downloaded: {filename}")
+                    print(f"Downloaded: {filename}")
+                    
                 except Exception as e:
-                    print(f"❌ Failed to download {filename}: {e}")
+                    print(f"Failed to download {filename}: {e}")
             
-            # Build clean result without binary data
+            # Combine all processed files
+            all_files = processed_files + downloaded_files
+            
+            # Build result
             result_parts = []
             result_parts.append(f"Execution completed (Session: {session_id})")
             
             if output_text:
-                result_parts.append(f"Output:\n{output_text}")
+                result_parts.append(f"Output: {output_text}")
             
             if execution.error:
-                # Clean error message too
-                error_msg = str(execution.error)
-                if len(error_msg) > 1000:
-                    error_msg = error_msg[:500] + "... [truncated]"
-                result_parts.append(f"Error:\n{error_msg}")
+                result_parts.append(f"Error: {execution.error}")
             
-            if downloaded_files:
-                result_parts.append(f"✅ Downloaded files: {', '.join(downloaded_files)}")
+            if all_files:
+                result_parts.append(f"Generated files: {', '.join(all_files)}")
             else:
-                result_parts.append("❌ No files were downloaded")
+                result_parts.append("No files generated")
             
             # Check for new local files
             files_after = set(processor.get_available_files())
             new_files = files_after - files_before
             if new_files:
-                result_parts.append(f"📝 New local files: {', '.join(new_files)}")
+                result_parts.append(f"New local files: {', '.join(new_files)}")
             
             return "\n".join(result_parts)
             
     except Exception as e:
-        error_msg = f"❌ Error executing code: {str(e)}"
-        print(f"❌ {error_msg}")
+        error_msg = f"Error executing code: {str(e)}"
+        print(error_msg)
         return error_msg
 
-def looks_like_binary(text: str) -> bool:
-    """Check if text looks like binary data"""
-    if not text:
-        return False
+def process_single_result(result, output_dir: str, index: int) -> List[str]:
+    """
+    Process a single E2B result and save any files it contains.
+    Returns list of filenames created.
+    """
+    created_files = []
     
-    # Count non-printable characters
-    non_printable = sum(1 for char in text if ord(char) < 32 and char not in '\n\r\t')
-    ratio = non_printable / len(text) if text else 0
+    try:
+        # Handle PIL Image objects
+        if hasattr(result, '__class__') and 'PIL.' in str(result.__class__):
+            print(f"Result {index}: PIL Image detected")
+            try:
+                # Convert PIL Image to bytes and save
+                img_buffer = io.BytesIO()
+                result.save(img_buffer, format='PNG')
+                img_data = img_buffer.getvalue()
+                
+                filename = f"result_{index}.png"
+                filepath = os.path.join(output_dir, filename)
+                
+                with open(filepath, 'wb') as f:
+                    f.write(img_data)
+                
+                created_files.append(filename)
+                print(f"Saved PIL Image as {filename}")
+                
+            except Exception as e:
+                print(f"Failed to save PIL Image: {e}")
+        
+        # Handle base64 PNG
+        elif hasattr(result, 'png') and result.png:
+            print(f"Result {index}: Base64 PNG detected")
+            try:
+                filename = f"result_{index}.png"
+                filepath = os.path.join(output_dir, filename)
+                
+                with open(filepath, 'wb') as f:
+                    f.write(base64.b64decode(result.png))
+                
+                created_files.append(filename)
+                print(f"Saved base64 PNG as {filename}")
+            except Exception as e:
+                print(f"Failed to save base64 PNG: {e}")
+        
+        # Handle base64 JPG
+        elif hasattr(result, 'jpg') and result.jpg:
+            print(f"Result {index}: Base64 JPG detected")
+            try:
+                filename = f"result_{index}.jpg"
+                filepath = os.path.join(output_dir, filename)
+                
+                with open(filepath, 'wb') as f:
+                    f.write(base64.b64decode(result.jpg))
+                
+                created_files.append(filename)
+                print(f"Saved base64 JPG as {filename}")
+            except Exception as e:
+                print(f"Failed to save base64 JPG: {e}")
+        
+        # Handle SVG
+        elif hasattr(result, 'svg') and result.svg:
+            print(f"Result {index}: SVG detected")
+            try:
+                filename = f"result_{index}.svg"
+                filepath = os.path.join(output_dir, filename)
+                
+                with open(filepath, 'w') as f:
+                    f.write(result.svg)
+                
+                created_files.append(filename)
+                print(f"Saved SVG as {filename}")
+            except Exception as e:
+                print(f"Failed to save SVG: {e}")
+        
+        # Handle text results
+        elif hasattr(result, 'text') and result.text:
+            print(f"Result {index}: Text result detected")
+            try:
+                filename = f"result_{index}.txt"
+                filepath = os.path.join(output_dir, filename)
+                
+                with open(filepath, 'w') as f:
+                    f.write(result.text)
+                
+                created_files.append(filename)
+                print(f"Saved text as {filename}")
+            except Exception as e:
+                print(f"Failed to save text: {e}")
+        
+        # Handle generic object - try to serialize
+        else:
+            print(f"Result {index}: Generic object - {type(result)}")
+            try:
+                # Try to convert to string and save
+                filename = f"result_{index}.txt"
+                filepath = os.path.join(output_dir, filename)
+                
+                with open(filepath, 'w') as f:
+                    f.write(str(result))
+                
+                created_files.append(filename)
+                print(f"Saved generic object as {filename}")
+            except Exception as e:
+                print(f"Failed to save generic object: {e}")
     
-    # If more than 10% non-printable, likely binary
-    return ratio > 0.1 or len(text) > 10000
+    except Exception as e:
+        print(f"Error processing result {index}: {e}")
+    
+    return created_files
+
+
 
 @tool
 def read_file(filename: str) -> str:
@@ -732,7 +830,7 @@ def main():
     if args.openai_key:
         os.environ['GOOGLE_API_KEY'] = args.openai_key
     elif not os.getenv('GOOGLE_API_KEY'):
-        print("\n <======<(^-^)>=====>OpenAI API key not found!")
+        print("\n <======<(^-^)>=====> GOOGLE API key not found!")
         print("Please set GOOGLE_API_KEY environment variable or use --openai-key argument")
         sys.exit(1)
     
