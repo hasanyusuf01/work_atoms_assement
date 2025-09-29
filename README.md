@@ -10,7 +10,6 @@ The primary entry point is **`modified_main.py`**, which contains the CLI code f
 2. Install dependencies:
 
 ```
-   bash
    pip install -r requirements.txt
 ```
 
