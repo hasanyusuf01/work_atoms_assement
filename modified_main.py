@@ -24,6 +24,7 @@ import shutil
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+shared_processing_logger = ProcessingLogger(logger)
 load_dotenv() 
 
 
@@ -116,12 +117,18 @@ def execute_and_download_code(code: str, required_files: str = "") -> str:
                                 decoded = base64.b64decode(content)
                                 content = decoded
                             except:
-                                content = content.encode('latin-1')
+                                try:
+                                    content = content.encode('latin-1')
+                                except Exception:
+                                    content = content.encode('utf-8') 
                     
                     # Write file
                     with open(local_path, 'wb') as f:
                         if isinstance(content, str):
-                            f.write(content.encode('latin-1'))
+                            try:
+                                content = content.encode('latin-1')
+                            except Exception:
+                                content = content.encode('utf-8')
                         else:
                             f.write(content)
                     
@@ -378,9 +385,6 @@ def generate_python_code(task_description: str, file_info: str = "") -> str:
         Generate the Python code now:
 
         """
-        
-
-
 
         
         response = llm.invoke(code_generation_prompt)
@@ -393,7 +397,8 @@ def generate_python_code(task_description: str, file_info: str = "") -> str:
             generated_code = generated_code[3:]
         if generated_code.endswith("```"):
             generated_code = generated_code[:-3]
-            
+        
+        shared_processing_logger.add_log('CODE_GENERATION',generated_code)
         return generated_code.strip()
         
     except Exception as e:
@@ -419,7 +424,7 @@ def list_files() -> str:
             size = os.path.getsize(file_path)
             file_info.append(f"{file} (Type: {file_type}, Size: {size} bytes)")
         
-        return "Available files:\n" + "\n".join(file_info)
+        return "Available files:\n" + "\n".join(file_info)+ "\n\n"  
     except Exception as e:
         return f"Error listing files: {str(e)}"
 @tool
@@ -564,15 +569,15 @@ The execute_and_download_code tool automatically detects output files from code 
 
 class CLIFileProcessor:
 
-    def __init__(self):
-        self.processor = DynamicFileProcessor(logger)
-        self.logger = ProcessingLogger(logger)
+    def __init__(self,input_folder: str = "input_files", output_folder: str = "output_files"):
+        self.processor = DynamicFileProcessor(logger,input_folder,output_folder)
+        self.logger = shared_processing_logger
         self.agent = setup_agent()
         self.conversation = []
 
-    def test_agent_tools(self):
+    def test_agent(self):
         """Test if agent tools are working properly"""
-        print("\n\n <======<(^-^)>=====> Testing agent tools...")
+        print("\n\n \t\t.............. Testing agent ..............")
         try:
             test_result = self.agent.invoke({
                 "input": "Please list all available files using the list_files tool"
@@ -591,23 +596,23 @@ class CLIFileProcessor:
         
     def display_banner(self):
         """Display CLI banner"""
-        print("\n" + "="*80)
+        print("\n" + "="*100)
         print("\n <======<(^-^)>=====> CodeSmith")
-        print("="*80)
+        print("="*100)
         print("Commands:")
-        print("  /help, /h      - Show this help message")
+        print("  /help, /h      - List of all system commands")
         print("  /files, /f     - List available files")
-        print("  /upload, /u    - Upload files to input folder")
+        # print("  /upload, /u    - Upload files to input folder")
         print("  /logs, /l      - Show processing logs")
         print("  /code, /c      - Show latest code operations")
         print("  /clear         - Clear screen")
         print("  /exit, /quit   - Exit the application")
         print("  <your query>   - Process files with AI agent")
-        print("="*80)
+        print("="*100)
         
     def upload_files(self):
         """Handle file uploads via CLI"""
-        print("\n\n <======<(^-^)>=====> File Upload")
+        print("\n\n <======<--->=====> File Upload")
         print("Drag and drop files into the 'input_files' folder or specify paths to copy.")
         
         while True:
@@ -626,26 +631,26 @@ class CLIFileProcessor:
                         f"Uploaded {filename}",
                         {"filename": filename, "size": os.path.getsize(dest_path)}
                     )
-                    print(f"\n <======<(^-^)>=====> Uploaded: {filename}")
+                    print(f"\n .............. Uploaded: {filename}")
                 except Exception as e:
-                    print(f"\n <======<(^-^)>=====> Error uploading {filename}: {e}")
+                    print(f"\n <======<---->=====> Error uploading {filename}: {e}")
             else:
-                print(f"\n <======<(^-^)>=====> File not found: {file_path}")
+                print(f"\n <======<---->=====> File not found: {file_path}")
     
     def list_available_files(self):
         """List all available files"""
         files = self.processor.get_available_files()
         if not files:
-            print("📭 No files in input folder.")
+            print(" No files in input folder.")
             return
             
-        print("\n\n <======<(^-^)>=====> Available Files:")
+        print("\n\n <======<---->=====> Available Files:")
         print("-" * 50)
         for file in files:
             file_path = os.path.join(self.processor.input_folder, file)
             file_size = os.path.getsize(file_path)
             file_type = Path(file).suffix
-            print(f"  \n <======<(^-^)>=====> {file} ({file_type}, {file_size} bytes)")
+            print(f"  \n <======<---->=====> {file} ({file_type}, {file_size} bytes)")
     
     def show_latest_code_operations(self):
         """Display latest code generation and execution logs"""
@@ -653,10 +658,10 @@ class CLIFileProcessor:
                     if log['type'] in ['CODE_GENERATION', 'CODE_EXECUTION']]
         
         if not code_logs:
-            print("\n <======<(^-^)>=====>  No code operations yet.")
+            print("\n <======<---->=====>  No code operations yet.")
             return
             
-        print("\n\n <======<(^-^)>=====>  Latest Code Operations:")
+        print("\n\n <======<---->=====>  Latest Code Operations:")
         print("="*60)
         
         for log in code_logs[-5:]:  # Show last 5 operations
@@ -688,10 +693,10 @@ class CLIFileProcessor:
             })
             
             response = result.get("output", "No response generated")
-            
+            intermediate_steps = result.get("intermediate_steps", "No intermediate steps generated")
+            # print(intermediate_steps)
             # Add to conversation
             self.conversation.append({"role": "assistant", "content": response})
-            
             # Log the response
             self.logger.add_log("AGENT_RESPONSE", response)
             
@@ -717,21 +722,21 @@ class CLIFileProcessor:
         self.display_banner()
         
         # Test agent tools on startup
-        print("\n\n <======<(^-^)>=====> Initializing agent tools...")
-        if not self.test_agent_tools():
+        print("\n\n \t\t..............Initializing agent tools ..............")
+        if not self.test_agent():
             print("\n <======<(^-^)>=====>  Agent tools initialization had issues, but continuing...")
         
         while True:
             try:
                 print("\n" + "─" * 40)
-                user_input = input("\n <======<(^-^)>=====>  Enter command or query: ").strip()
+                user_input = input("\n => Enter command or query: ").strip()
                 
                 if not user_input:
                     continue
                 
                 # Handle special commands
                 if user_input.lower() in ['/exit', '/quit', 'exit', 'quit']:
-                    print("\n <======<(^-^)>=====> Goodbye!<======<(^-^)>=====>")
+                    print("\n <======\t\t\t=====> GOODBYE!<======\t\t\t=====>")
                     break
                     
                 elif user_input.lower() in ['/help', '/h']:
@@ -754,7 +759,7 @@ class CLIFileProcessor:
                     self.display_banner()
                     
                 elif user_input.lower() in ['/test', '/t']:
-                    self.test_agent_tools()
+                    self.test_agent()
                     
                 else:
                     # Process as AI query - this will use tools through the agent
@@ -770,6 +775,8 @@ def main():
     parser = argparse.ArgumentParser(description='CodeSmith')
     parser.add_argument('--input-folder', '-i', default='input_files', 
                        help='Input folder for files (default: input_files)')
+    parser.add_argument('--output-folder', '-o', default='output_files', 
+                       help='Output folder for files (default: output_files)')
     parser.add_argument('--openai-key', '-k', help='OpenAI API key')
     
     args = parser.parse_args()
@@ -784,7 +791,7 @@ def main():
     
     # Initialize and run CLI
     try:
-        cli = CLIFileProcessor()
+        cli = CLIFileProcessor(input_folder=args.input_folder, output_folder = args.output_folder)
         cli.run()
     except Exception as e:
         print(f"\n <======<(^-^)>=====> Failed to start CLI: {e}")
