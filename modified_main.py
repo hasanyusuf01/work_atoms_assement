@@ -18,10 +18,6 @@ from dotenv import load_dotenv
 from fileprocessor import DynamicFileProcessor, ProcessingLogger
 import shutil
 
-
-
-
-
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 shared_processing_logger = ProcessingLogger(logger)
@@ -289,15 +285,17 @@ def process_single_result(result, output_dir: str, index: int, output_files: Lis
 
 
 @tool
-def read_file(filename: str) -> str:
+def read_file(filename: str, folder_name: str) -> str:
     """
     Read and return the content of a file from the input folder.
     
     Args:
         filename: Name of the file to read
+        folder_name: Name of the folder to read from 
     """
     try:
         processor = shared_file_processor
+        folder_path = processor.get_folder_path(folder_name)
         file_path = os.path.join(processor.input_folder, filename)
         
         if not os.path.exists(file_path):
@@ -318,7 +316,7 @@ def read_file(filename: str) -> str:
         return f"Error reading file {filename}: {str(e)}"
 
 @tool
-def write_file(filename: str, content: str) -> str:
+def write_file(filename: str, folder_name: str , content: str) -> str:
     """
     Write content to a file in the input folder.
     This works directly with the local file system.
@@ -326,10 +324,14 @@ def write_file(filename: str, content: str) -> str:
     Args:
         filename: Name of the file to write (e.g., 'a.csv')
         content: Content to write to the file
+        folder_name: Name of the folder to read from 
+
     """
     try:
+        
         processor = shared_file_processor
-        file_path = os.path.join(processor.input_folder, filename)
+        folder_path = processor.get_folder_path(folder_name)
+        file_path = os.path.join(folder_path, filename)
         
         # Ensure the directory exists
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -449,6 +451,7 @@ def download_files_from_sandbox(filenames: str) -> str:
         
         print(f"<======> Attempting to download files: {', '.join(files_to_download)}")
         
+        #   
         # Since we can't access the previous sandbox, we'll create a new one and check for files
         # This is a limitation - in a production system you'd track sandbox sessions
         with Sandbox.create() as sandbox:
@@ -525,7 +528,7 @@ def setup_agent():
     # System prompt for dynamic file processing
     system_prompt = """You are a dynamic file processing assistant. You can:
     1. List available files in the required folder using list_files tool it will take the name of the folder as a prameter i.e folder_type
-    2. Read and analyze file contents using read_file tool  
+    2. Read and analyze file contents using read_file tool  it will take the name of the  file and the folder as a prameter i.e filename and folder_name
     4. Write modified files back using write_file tool
     5. When you need to generate code, ALWAYS use the generate_python_code tool
     6. The generate_python_code tool will create ACTUAL working Python code, not placeholders
@@ -536,8 +539,8 @@ def setup_agent():
     11. For manual file downloads: use download_files_from_sandbox
         
     Always follow this process:
-    1. First, use list_files tool to understand what files are available always make sure you have the names of the folders or 
-    directories you are working with ask for directories name if not given 
+    IMPORTANT: Always make sure you have the names of the folders or directories you are working with ask for directories name if not given. 
+    1. First, use list_files tool to understand what files are available. 
     2. If needed, use read_file tool to understand file structure
     3. Generate appropriate Python code using generate_python_code tool for the requested task
     4. Execute the code using execute_and_download_code tool which will take the code as input and the list of required files names as described in its desription and return results

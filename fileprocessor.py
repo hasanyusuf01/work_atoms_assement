@@ -13,7 +13,7 @@ class DynamicFileProcessor:
         self.logger = logger
         # self.setup_folders(input_folder,output_folder)
 
-    def get_folder_path(self,folder_type):
+    def get_folder_path(self,folder_type :str):
         folder_type = folder_type.lower()
         if "input" in folder_type :
             return self.input_folder
@@ -27,7 +27,7 @@ class DynamicFileProcessor:
         os.makedirs(self.input_folder, exist_ok=True)
         os.makedirs(self.output_folder, exist_ok=True)
         
-    def get_available_files(self,folder_type) -> List[str]:
+    def get_available_files(self,folder_type:str) -> List[str]:
         """Get list of all files in input folder"""
         path = self.get_folder_path(folder_type)
         try:
