@@ -7,24 +7,33 @@ from datetime import datetime
 
 
 class DynamicFileProcessor:
-    def __init__(self,logger ,input_folder: str = "input_files", output_folder: str = "output_files"):
+    def __init__(self,logger):
+        self.input_folder = None
+        self.output_folder = None
+        self.logger = logger
+        # self.setup_folders(input_folder,output_folder)
+
+    def get_folder_path(self,folder_type):
+        folder_type = folder_type.lower()
+        if "input" in folder_type :
+            return self.input_folder
+        if "output" in folder_type :
+            return self.output_folder
+    
+    def setup_folders(self,input_folder: str = "input_files", output_folder: str = "output_files"):
         self.input_folder = input_folder
         self.output_folder = output_folder
-        self.logger = logger
-
-        self.setup_folders()
-        
-    def setup_folders(self):
         """Create necessary folders"""
         os.makedirs(self.input_folder, exist_ok=True)
         os.makedirs(self.output_folder, exist_ok=True)
         
-    def get_available_files(self) -> List[str]:
+    def get_available_files(self,folder_type) -> List[str]:
         """Get list of all files in input folder"""
+        path = self.get_folder_path(folder_type)
         try:
             files = []
-            for file in os.listdir(self.input_folder):
-                if os.path.isfile(os.path.join(self.input_folder, file)):
+            for file in os.listdir(path):
+                if os.path.isfile(os.path.join(path, file)):
                     files.append(file)
             return files
         except Exception as e:

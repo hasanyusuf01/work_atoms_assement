@@ -25,6 +25,7 @@ import shutil
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 shared_processing_logger = ProcessingLogger(logger)
+shared_file_processor = DynamicFileProcessor(logger)
 load_dotenv() 
 
 
@@ -41,7 +42,7 @@ def execute_and_download_code(code: str, required_files: str = "") -> str:
         session_id = str(uuid.uuid4())[:8]
         print(f"Executing code in sandbox (Session: {session_id})...")
         
-        processor = DynamicFileProcessor(logger)
+        processor = shared_file_processor
         files_before = set(processor.get_available_files())
 
         files_to_upload = []
@@ -78,6 +79,7 @@ def execute_and_download_code(code: str, required_files: str = "") -> str:
                 output_text = "\n".join(execution.logs.stdout)
             
             print(f"Execution output: {output_text}")
+            print(f"outout files {execution}")
             
             output_files = []
             if output_text:
@@ -117,18 +119,18 @@ def execute_and_download_code(code: str, required_files: str = "") -> str:
                                 decoded = base64.b64decode(content)
                                 content = decoded
                             except:
-                                try:
+                                # try:
                                     content = content.encode('latin-1')
-                                except Exception:
-                                    content = content.encode('utf-8') 
+                                # except Exception:
+                                #     content = content.encode('utf-8') 
                     
                     # Write file
                     with open(local_path, 'wb') as f:
                         if isinstance(content, str):
-                            try:
+                            # try:
                                 content = content.encode('latin-1')
-                            except Exception:
-                                content = content.encode('utf-8')
+                            # except Exception:
+                            #     content = content.encode('utf-8')
                         else:
                             f.write(content)
                     
@@ -295,7 +297,7 @@ def read_file(filename: str) -> str:
         filename: Name of the file to read
     """
     try:
-        processor = DynamicFileProcessor(logger)
+        processor = shared_file_processor
         file_path = os.path.join(processor.input_folder, filename)
         
         if not os.path.exists(file_path):
@@ -326,7 +328,7 @@ def write_file(filename: str, content: str) -> str:
         content: Content to write to the file
     """
     try:
-        processor = DynamicFileProcessor(logger)
+        processor = shared_file_processor
         file_path = os.path.join(processor.input_folder, filename)
         
         # Ensure the directory exists
@@ -405,21 +407,23 @@ def generate_python_code(task_description: str, file_info: str = "") -> str:
         return f"Error generating code: {str(e)}"
 
 @tool
-def list_files() -> str:
+def list_files(folder_type) -> str:
     """
-    List all files available in the input folder for processing.
+    List all files available in the folder that can be input_folder or output_folder for processing.
     Returns a list of filenames with their types.
-    IMPORTANT: This tool takes no input parameters.
+    IMPORTANT: This tool takes no folder_type as a parameter which gets the folder path,
+    folder_type can be string with value input/input_folder/input_files or output/output_files/output_folder.
     """
+
     try:
-        processor = DynamicFileProcessor(logger)
-        files = processor.get_available_files()
+        processor = shared_file_processor
+        files = processor.get_available_files(folder_type)
         if not files:
-            return "No files found in input folder. Please upload files first."
+            return "No files found in the folder. Please upload files first."
         
         file_info = []
         for file in files:
-            file_path = os.path.join(processor.input_folder, file)
+            file_path = os.path.join(processor.get_folder_path(folder_type), file)
             file_type = Path(file).suffix.lower() or "unknown"
             size = os.path.getsize(file_path)
             file_info.append(f"{file} (Type: {file_type}, Size: {size} bytes)")
@@ -436,7 +440,7 @@ def download_files_from_sandbox(filenames: str) -> str:
         filenames: Comma-separated list of filenames to download (e.g., "a.csv,output.txt")
     """
     try:
-        processor = DynamicFileProcessor(logger)
+        processor = shared_file_processor
         files_to_download = [f.strip() for f in filenames.split(',')]
         downloaded_files = []
         
@@ -481,7 +485,7 @@ def execute_python_code(code: str) -> str:
         session_id = str(uuid.uuid4())[:8]
         print(f"Executing code in sandbox (Session: {session_id})...")
         
-        processor = DynamicFileProcessor(logger)
+        processor = shared_file_processor
         
         with Sandbox.create() as sandbox:
             # Upload all input files to sandbox
@@ -520,7 +524,7 @@ def setup_agent():
     
     # System prompt for dynamic file processing
     system_prompt = """You are a dynamic file processing assistant. You can:
-    1. List available files in the input folder using list_files tool
+    1. List available files in the required folder using list_files tool it will take the name of the folder as a prameter i.e folder_type
     2. Read and analyze file contents using read_file tool  
     4. Write modified files back using write_file tool
     5. When you need to generate code, ALWAYS use the generate_python_code tool
@@ -531,13 +535,14 @@ def setup_agent():
     list i.e the files that are required to run the code or on which the processing is to be done.
     11. For manual file downloads: use download_files_from_sandbox
         
-        Always follow this process:
-    1. First, use list_files tool to understand what files are available
+    Always follow this process:
+    1. First, use list_files tool to understand what files are available always make sure you have the names of the folders or 
+    directories you are working with ask for directories name if not given 
     2. If needed, use read_file tool to understand file structure
     3. Generate appropriate Python code using generate_python_code tool for the requested task
     4. Execute the code using execute_and_download_code tool which will take the code as input and the list of required files names as described in its desription and return results
     
-The execute_and_download_code tool automatically detects output files from code execution and downloads them.
+    The execute_and_download_code tool automatically detects output files from code execution and downloads them.
     Be specific about which files you're processing and what operations you're performing.
     IMPORTANT: Always use the tools to interact with files, don't assume file contents.
     """
@@ -570,7 +575,8 @@ The execute_and_download_code tool automatically detects output files from code 
 class CLIFileProcessor:
 
     def __init__(self,input_folder: str = "input_files", output_folder: str = "output_files"):
-        self.processor = DynamicFileProcessor(logger,input_folder,output_folder)
+        self.processor = shared_file_processor
+        self.processor.setup_folders(input_folder,output_folder)
         self.logger = shared_processing_logger
         self.agent = setup_agent()
         self.conversation = []
@@ -580,7 +586,7 @@ class CLIFileProcessor:
         print("\n\n \t\t.............. Testing agent ..............")
         try:
             test_result = self.agent.invoke({
-                "input": "Please list all available files using the list_files tool"
+                "input": "Please list all available files using the list_files tool in the input_files and output_files folder"
             })
             
             if test_result.get("output"):
@@ -792,6 +798,7 @@ def main():
     # Initialize and run CLI
     try:
         cli = CLIFileProcessor(input_folder=args.input_folder, output_folder = args.output_folder)
+        # cli.setup
         cli.run()
     except Exception as e:
         print(f"\n <======<(^-^)>=====> Failed to start CLI: {e}")
